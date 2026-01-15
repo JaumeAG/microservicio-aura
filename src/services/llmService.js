@@ -46,7 +46,7 @@ const AVAILABLE_FUNCTIONS = [
   {
     name: "update_product_info",
     description:
-      "MODIFICAR, CAMBIAR, EDITAR o ACTUALIZAR información de un producto EXISTENTE. Usa esta función cuando el usuario diga 'modifica', 'cambia', 'edita', 'actualiza' la descripción, nombre, precio u otro dato de un producto que YA EXISTE en el menú. IMPORTANTE: Solo para productos existentes, NO para crear nuevos productos.",
+      "Actualizar información completa de un producto: nombre, descripción, precio, categoría, disponibilidad, stock. Usa esta función cuando se quiera cambiar CUALQUIER dato del producto o múltiples campos a la vez.",
     parameters: {
       type: "object",
       properties: {
@@ -56,20 +56,20 @@ const AVAILABLE_FUNCTIONS = [
         },
         product_name: {
           type: "string",
-          description: "Nombre actual del producto EXISTENTE que se quiere modificar",
+          description: "Nombre actual del producto a buscar (si no hay ID)",
         },
         new_name: {
           type: "string",
           description:
-            "Nuevo nombre del producto (solo si se quiere cambiar el nombre)",
+            "Nuevo nombre del producto (si se quiere cambiar el nombre)",
         },
         new_description: {
           type: "string",
-          description: "Nueva descripción para reemplazar la actual",
+          description: "Nueva descripción detallada del producto",
         },
         new_price: {
           type: "number",
-          description: "Nuevo precio (solo si se quiere cambiar el precio)",
+          description: "Nuevo precio (si se quiere cambiar el precio)",
         },
         category: {
           type: "string",
@@ -86,7 +86,7 @@ const AVAILABLE_FUNCTIONS = [
           description: "Cantidad de stock/inventario disponible",
         },
       },
-      required: ["product_name"],
+      required: [],
     },
   },
   {
@@ -153,25 +153,25 @@ const AVAILABLE_FUNCTIONS = [
   },
   {
     name: "create_product",
-    description: "CREAR, AGREGAR o AÑADIR un producto NUEVO que NO EXISTE en el menú. Usa esta función SOLO cuando el usuario quiera agregar un producto completamente nuevo. Si el producto ya existe y solo quiere modificarlo, usa 'update_product_info'.",
+    description: "Crear un nuevo producto en el sistema",
     parameters: {
       type: "object",
       properties: {
         name: {
           type: "string",
-          description: "Nombre del nuevo producto a crear",
+          description: "Nombre del producto",
         },
         description: {
           type: "string",
-          description: "Descripción del nuevo producto",
+          description: "Descripción del producto",
         },
         price: {
           type: "number",
-          description: "Precio del nuevo producto",
+          description: "Precio del producto",
         },
         category: {
           type: "string",
-          description: "Categoría del nuevo producto",
+          description: "Categoría del producto",
         },
         stock: {
           type: "integer",
