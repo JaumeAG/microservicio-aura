@@ -13,9 +13,11 @@ export function authenticate(req, res, next) {
   // Validar que existe el header Authorization
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     console.error("❌ Token faltante o formato incorrecto");
-    
-    const friendlyError = formatUserFriendlyError(new Error("Token 401 unauthorized missing"));
-    
+
+    const friendlyError = formatUserFriendlyError(
+      new Error("Token 401 unauthorized missing"),
+    );
+
     return res.status(401).json({
       success: false,
       error: friendlyError.message,
@@ -32,9 +34,11 @@ export function authenticate(req, res, next) {
   // Validar que el token tiene formato JWT (tiene 3 partes separadas por puntos)
   if (!token || token.split(".").length !== 3) {
     console.error("❌ Formato de token inválido (debe ser JWT)");
-    
+
     // Forzamos el mensaje "Token" para que el formateador lo detecte como Auth
-    const friendlyError = formatUserFriendlyError(new Error("Token JWT inválido (formato incorrecto)"));
+    const friendlyError = formatUserFriendlyError(
+      new Error("Token JWT inválido (formato incorrecto)"),
+    );
 
     return res.status(401).json({
       success: false,

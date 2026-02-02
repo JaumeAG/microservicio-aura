@@ -43,10 +43,10 @@ app.use(express.json());
 // Middleware para asegurar UTF-8 en respuestas JSON
 app.use((req, res, next) => {
   const originalJson = res.json;
-  res.json = function(data) {
-    res.charset = 'utf-8';
-    if (!res.getHeader('Content-Type')) {
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.json = function (data) {
+    res.charset = "utf-8";
+    if (!res.getHeader("Content-Type")) {
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
     }
     return originalJson.call(this, data);
   };
@@ -81,12 +81,12 @@ app.get("/health", (req, res) => {
 app.get("/ai/families", authenticate, async (req, res) => {
   try {
     console.log("\n📋 Obteniendo familias disponibles...");
-    
+
     const families = await callLaravelAPI(
       "/api/aura/familias",
       "GET",
       null,
-      req.userToken
+      req.userToken,
     );
 
     const familyList = Array.isArray(families)
@@ -108,7 +108,7 @@ app.get("/ai/families", authenticate, async (req, res) => {
       error: friendlyError.message,
       errorTitle: friendlyError.title,
       errorSuggestion: friendlyError.suggestion,
-      technicalError: friendlyError.technical
+      technicalError: friendlyError.technical,
     });
   }
 });
@@ -118,7 +118,8 @@ app.get("/ai/families", authenticate, async (req, res) => {
 // ==========================================
 app.get("/ai/providers/stats", authenticate, async (req, res) => {
   try {
-    const { getProviderManager } = await import("./services/aiProviderRotation.js");
+    const { getProviderManager } =
+      await import("./services/aiProviderRotation.js");
     const providerManager = getProviderManager();
     const stats = providerManager.getStats();
 
@@ -140,9 +141,12 @@ app.get("/ai/providers/stats", authenticate, async (req, res) => {
 // ==========================================
 app.post("/ai/providers/rotate", authenticate, async (req, res) => {
   try {
-    const { getProviderManager } = await import("./services/aiProviderRotation.js");
+    const { getProviderManager } =
+      await import("./services/aiProviderRotation.js");
     const providerManager = getProviderManager();
-    const newProvider = providerManager.rotateToNextProvider("Rotación manual solicitada");
+    const newProvider = providerManager.rotateToNextProvider(
+      "Rotación manual solicitada",
+    );
 
     res.json({
       success: true,
@@ -201,7 +205,7 @@ app.post(
       console.log("\n🔍 Validando parámetros...");
       const validation = await validateActionParameters(
         interpretation.function_name,
-        interpretation.parameters
+        interpretation.parameters,
       );
 
       if (!validation.is_valid) {
@@ -230,7 +234,7 @@ app.post(
       const preview = await generateActionPreview(
         interpretation.function_name,
         interpretation.parameters,
-        user_id
+        user_id,
       );
 
       console.log("\n✅ Preview generado exitosamente");
@@ -244,7 +248,11 @@ app.post(
         confidence: interpretation.confidence || 0.9,
         confirmation_required: preview.requires_confirmation || false,
         preview: {
-          summary: preview.title || preview.summary || preview.description || "Acción preparada",
+          summary:
+            preview.title ||
+            preview.summary ||
+            preview.description ||
+            "Acción preparada",
           details: preview.description || preview.details || "",
           confirmable: preview.confirmable || true,
         },
@@ -264,10 +272,11 @@ app.post(
         errorTitle: friendlyError.title,
         errorSuggestion: friendlyError.suggestion,
         technicalError: friendlyError.technical,
-        details: process.env.NODE_ENV === "development" ? error.stack : undefined,
+        details:
+          process.env.NODE_ENV === "development" ? error.stack : undefined,
       });
     }
-  }
+  },
 );
 
 // ==========================================
@@ -317,7 +326,7 @@ app.post(
       console.log("\n🔍 Validando parámetros...");
       const validation = await validateActionParameters(
         function_name,
-        parameters
+        parameters,
       );
 
       if (!validation.is_valid) {
@@ -336,12 +345,12 @@ app.post(
       // Ejecutar la acción
       // El token JWT ya está en req.userToken (guardado por el middleware authenticate)
       const userToken = req.userToken;
-      
+
       if (!userToken) {
         return res.status(401).json({
           success: false,
           error: "Token JWT del usuario requerido.",
-          hint: "Incluye el header: Authorization: Bearer <tu_jwt_token_de_laravel>"
+          hint: "Incluye el header: Authorization: Bearer <tu_jwt_token_de_laravel>",
         });
       }
 
@@ -374,7 +383,7 @@ app.post(
           process.env.NODE_ENV === "development" ? error.stack : undefined,
       });
     }
-  }
+  },
 );
 
 // ==========================================
@@ -395,7 +404,7 @@ app.post(
       const preview = await generateActionPreview(
         function_name,
         parameters,
-        user_id
+        user_id,
       );
 
       res.json({
@@ -416,7 +425,7 @@ app.post(
         technicalError: friendlyError.technical,
       });
     }
-  }
+  },
 );
 
 // ==========================================
