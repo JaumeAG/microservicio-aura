@@ -39,7 +39,10 @@ export async function executeAction(functionName, parameters, userToken) {
 
   if (!executor) {
     console.error(`❌ Función "${functionName}" no encontrada`);
-    console.error(`📋 Funciones disponibles:`, Object.keys(executors).join(', '));
+    console.error(
+      `📋 Funciones disponibles:`,
+      Object.keys(executors).join(", "),
+    );
     throw new Error(`Función no soportada: ${functionName}`);
   }
 
@@ -62,7 +65,7 @@ export async function callLaravelAPI(
   endpoint,
   method = "GET",
   data = null,
-  userToken
+  userToken,
 ) {
   const url = `${LARAVEL_API_URL}${endpoint}`;
 
@@ -70,7 +73,7 @@ export async function callLaravelAPI(
   console.log(
     `🔑 Token JWT enviado: ${
       userToken ? userToken.substring(0, 20) + "..." : "NO HAY TOKEN"
-    }`
+    }`,
   );
 
   const options = {
@@ -91,10 +94,87 @@ export async function callLaravelAPI(
     const response = await fetch(url, options);
 
     console.log(
-      `📥 Respuesta de Laravel: ${response.status} ${response.statusText}`
+      `📥 Respuesta de Laravel: ${response.status} ${response.statusText}`,
     );
 
+    // Detectar si la respuesta es un archivo (CSV, PDF, Excel)
+    const contentType = response.headers.get("content-type") || "";
+    const contentDisposition =
+      response.headers.get("content-disposition") || "";
+
+    console.log(`🔍 Verificando si es archivo:`);
+    console.log(`   Content-Type: ${contentType}`);
+    console.log(`   Content-Disposition: ${contentDisposition}`);
+
+    // Detectar si es archivo por Content-Type o Content-Disposition
+    const isFileResponse =
+      contentType.includes("text/csv") ||
+      contentType.includes("application/csv") ||
+      contentType.includes("text/comma-separated-values") ||
+      contentType.includes("application/pdf") ||
+      contentType.includes(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ) ||
+      contentType.includes("application/vnd.ms-excel") ||
+      contentType.includes("application/octet-stream") ||
+      contentType.includes("application/force-download") ||
+      contentDisposition.includes("attachment") ||
+      contentDisposition.includes("filename") ||
+      (contentDisposition && !contentDisposition.includes("inline"));
+
+    console.log(`   ¿Es archivo?: ${isFileResponse}`);
+
     if (!response.ok) {
+      // Si es un archivo y hay error, intentar leer el error como texto primero
+      if (isFileResponse) {
+        const errorText = await response.text().catch(() => "");
+        throw new Error(
+          `Error al generar archivo: ${errorText || response.statusText}`,
+        );
+      }
+
+      // Si es HTML (error 500 con debug), capturar el HTML completo
+      if (contentType.includes("text/html") && response.status === 500) {
+        const errorHtml = await response.text().catch(() => "");
+        console.error(`❌ Error HTML de Laravel (500):`);
+        console.error(`📄 Tamaño del HTML: ${errorHtml.length} caracteres`);
+
+        if (errorHtml.length > 0) {
+          console.error(`📄 Primeros 2000 caracteres del error:`);
+          console.error(errorHtml.substring(0, 2000));
+
+          // Guardar en archivo para debug
+          const fs = require("fs");
+          const path = require("path");
+          try {
+            const errorFilePath = path.join(
+              process.cwd(),
+              "laravel_error_debug.html",
+            );
+            fs.writeFileSync(errorFilePath, errorHtml, "utf8");
+            console.error(`📁 Error guardado en: ${errorFilePath}`);
+          } catch (e) {
+            console.error(
+              `⚠️ No se pudo guardar el error en archivo: ${e.message}`,
+            );
+          }
+
+          // Intentar extraer el mensaje de error del HTML
+          const messageMatch = errorHtml.match(/<h1[^>]*>(.*?)<\/h1>/i);
+          if (messageMatch) {
+            throw new Error(messageMatch[1].replace(/<[^>]+>/g, ""));
+          }
+
+          // Buscar mensaje de error de otra forma
+          const titleMatch = errorHtml.match(/<title>(.*?)<\/title>/i);
+          if (titleMatch) {
+            throw new Error(titleMatch[1]);
+          }
+        }
+
+        throw new Error("Error interno del servidor en Laravel (sin detalles)");
+      }
+
       const errorData = await response.json().catch(() => ({}));
       console.error(`❌ Error de Laravel:`, errorData);
 
@@ -103,28 +183,110 @@ export async function callLaravelAPI(
         throw new Error(
           `Token JWT inválido o expirado. Verifica que el token del usuario sea válido. ${
             errorData.message || ""
-          }`
+          }`,
         );
       }
 
-      // Si el error es 500 y menciona negocio_id, el usuario no está autenticado
-      if (
-        response.status === 500 &&
-        errorData.message &&
-        errorData.message.includes("negocio_id")
-      ) {
+      // Si el error es 404, recurso no encontrado
+      if (response.status === 404) {
         throw new Error(
-          `Usuario no autenticado correctamente. El token JWT no pudo ser validado. Verifica que el token sea válido y que el usuario exista en la tabla Admin.`
+          errorData.message || "Recurso no encontrado en Laravel",
         );
       }
 
+      // Si el error es 500, puede ser varios tipos de error
+      if (response.status === 500) {
+        const errorMessage = errorData.message || "";
+
+        // Detectar errores de SQL (más comunes)
+        if (
+          errorMessage.includes("SQLSTATE") ||
+          errorMessage.includes("Column not found") ||
+          errorMessage.includes("Unknown column") ||
+          errorMessage.includes("Table") ||
+          errorMessage.includes("SQL:")
+        ) {
+          throw new Error(`Error de base de datos en Laravel: ${errorMessage}`);
+        }
+
+        // Solo si es un error específico de autenticación (sin mencionar SQL)
+        if (
+          errorMessage.includes("Usuario no autenticado") ||
+          errorMessage.includes("Administrador no encontrado") ||
+          errorMessage.includes("sin negocio asociado")
+        ) {
+          throw new Error(
+            `Usuario no autenticado correctamente. ${errorMessage}`,
+          );
+        }
+
+        // Error 500 genérico
+        throw new Error(
+          errorMessage || "Error interno del servidor en Laravel",
+        );
+      }
+
+      // Otros errores HTTP
       throw new Error(
-        errorData.message || `Error HTTP ${response.status} en Laravel`
+        errorData.message || `Error HTTP ${response.status} en Laravel`,
       );
     }
 
-    const result = await response.json();
-    return result;
+    // Si es un archivo, devolver la URL de descarga
+    if (isFileResponse) {
+      console.log(`📁 Respuesta detectada como archivo: ${contentType}`);
+      console.log(`📁 Content-Disposition: ${contentDisposition}`);
+
+      // Extraer el nombre del archivo del header Content-Disposition
+      let filename = "archivo";
+      const filenameMatch = contentDisposition.match(
+        /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/,
+      );
+      if (filenameMatch && filenameMatch[1]) {
+        filename = filenameMatch[1].replace(/['"]/g, "");
+        // Decodificar si está codificado
+        try {
+          filename = decodeURIComponent(filename);
+        } catch (e) {
+          // Si falla, usar el nombre tal cual
+        }
+      }
+
+      console.log(`📁 Nombre de archivo extraído: ${filename}`);
+
+      // IMPORTANTE: No leer el cuerpo de la respuesta si es un archivo
+      // Solo necesitamos la URL para que el frontend haga la descarga
+
+      // La URL ya está completa (incluye LARAVEL_API_URL)
+      return {
+        success: true,
+        is_file: true,
+        download_url: url, // URL completa con dominio
+        filename: filename,
+        content_type: contentType,
+      };
+    }
+
+    // Respuesta JSON normal
+    console.log(`📄 Respuesta detectada como JSON`);
+
+    // Verificar que realmente es JSON antes de parsear
+    const text = await response.text();
+    console.log(
+      `📄 Contenido de respuesta (primeros 200 chars):`,
+      text.substring(0, 200),
+    );
+
+    try {
+      const result = JSON.parse(text);
+      return result;
+    } catch (e) {
+      console.error(`❌ Error parseando JSON:`, e);
+      console.error(`   Contenido completo:`, text);
+      throw new Error(
+        `La respuesta no es un JSON válido: ${text.substring(0, 100)}`,
+      );
+    }
   } catch (error) {
     console.error("❌ Error llamando a Laravel:", error);
     throw new Error(`Error comunicándose con Laravel: ${error.message}`);
@@ -147,13 +309,13 @@ async function findProductByName(productName, userToken) {
       `/api/aura/productos/buscar?nombre=${encodeURIComponent(productName)}`,
       "GET",
       null,
-      userToken
+      userToken,
     );
 
     if (result.success && result.data && result.data.length > 0) {
       const product = result.data[0];
       console.log(
-        `✅ Producto encontrado: ${product.nombre} (ID: ${product.id}, Tipo: ${product.tipo})`
+        `✅ Producto encontrado: ${product.nombre} (ID: ${product.id}, Tipo: ${product.tipo})`,
       );
       return { id: product.id, tipo: product.tipo };
     }
@@ -180,7 +342,9 @@ async function executeFindProduct(params, userToken) {
   const searchQuery = query || product_name;
 
   if (!searchQuery && !product_id) {
-    throw new Error("Se requiere 'query', 'product_name' o 'product_id' para buscar productos");
+    throw new Error(
+      "Se requiere 'query', 'product_name' o 'product_id' para buscar productos",
+    );
   }
 
   try {
@@ -189,7 +353,9 @@ async function executeFindProduct(params, userToken) {
       console.log(`🔍 Buscando producto por ID: ${product_id}`);
       // Para buscar por ID necesitamos el tipo, así que usamos el nombre también
       if (!searchQuery) {
-        throw new Error("Para buscar por ID también se necesita el nombre del producto");
+        throw new Error(
+          "Para buscar por ID también se necesita el nombre del producto",
+        );
       }
       const producto = await findProductByName(searchQuery, userToken);
       return {
@@ -205,7 +371,7 @@ async function executeFindProduct(params, userToken) {
       `/api/aura/productos/buscar?nombre=${encodeURIComponent(searchQuery)}`,
       "GET",
       null,
-      userToken
+      userToken,
     );
 
     if (result.success && result.data && result.data.length > 0) {
@@ -221,7 +387,9 @@ async function executeFindProduct(params, userToken) {
       };
     }
 
-    console.log(`❌ No se encontraron productos con la búsqueda: "${searchQuery}"`);
+    console.log(
+      `❌ No se encontraron productos con la búsqueda: "${searchQuery}"`,
+    );
     return {
       success: true,
       found: false,
@@ -247,17 +415,21 @@ async function executeGetFamiliesWithProducts(params, userToken) {
       `/api/aura/familias-con-productos`,
       "GET",
       null,
-      userToken
+      userToken,
     );
 
     if (!response.success) {
-      throw new Error(response.error || "Error al obtener familias con productos");
+      throw new Error(
+        response.error || "Error al obtener familias con productos",
+      );
     }
 
     const familias = response.familias || [];
     const totalFamilias = response.total_familias || familias.length;
 
-    console.log(`✅ Se obtuvieron ${totalFamilias} familia(s) con sus productos`);
+    console.log(
+      `✅ Se obtuvieron ${totalFamilias} familia(s) con sus productos`,
+    );
 
     // Formatear la respuesta para que sea más legible
     let message = `📋 **Menú completo del negocio**\n\n`;
@@ -272,7 +444,7 @@ async function executeGetFamiliesWithProducts(params, userToken) {
           message += ` - ${familia.description}`;
         }
         message += `\n`;
-        message += `   Tipo: ${familia.type || 'N/A'} | Total productos: ${familia.total_productos}\n`;
+        message += `   Tipo: ${familia.type || "N/A"} | Total productos: ${familia.total_productos}\n`;
 
         // Mostrar platos
         if (familia.platos && familia.platos.length > 0) {
@@ -282,7 +454,7 @@ async function executeGetFamiliesWithProducts(params, userToken) {
             if (plato.description) {
               message += ` (${plato.description})`;
             }
-            message += ` ${plato.available ? '✅' : '❌'}\n`;
+            message += ` ${plato.available ? "✅" : "❌"}\n`;
           });
         }
 
@@ -294,7 +466,7 @@ async function executeGetFamiliesWithProducts(params, userToken) {
             if (bebida.description) {
               message += ` (${bebida.description})`;
             }
-            message += ` ${bebida.available ? '✅' : '❌'}\n`;
+            message += ` ${bebida.available ? "✅" : "❌"}\n`;
           });
         }
 
@@ -311,7 +483,9 @@ async function executeGetFamiliesWithProducts(params, userToken) {
     };
   } catch (error) {
     console.error(`❌ Error obteniendo familias con productos:`, error);
-    throw new Error(`Error obteniendo familias con productos: ${error.message}`);
+    throw new Error(
+      `Error obteniendo familias con productos: ${error.message}`,
+    );
   }
 }
 
@@ -342,12 +516,12 @@ async function executeUpdateProductPrice(params, userToken) {
 
   if (!productInfo.id || !productInfo.tipo) {
     throw new Error(
-      "Se requiere product_id o product_name. Si usas product_id, también necesitas product_name para determinar el tipo."
+      "Se requiere product_id o product_name. Si usas product_id, también necesitas product_name para determinar el tipo.",
     );
   }
 
   console.log(
-    `💰 Actualizando precio del ${productInfo.tipo} ${productInfo.id} a €${new_price}`
+    `💰 Actualizando precio del ${productInfo.tipo} ${productInfo.id} a €${new_price}`,
   );
 
   const result = await callLaravelAPI(
@@ -356,7 +530,7 @@ async function executeUpdateProductPrice(params, userToken) {
     {
       precio: parseFloat(new_price),
     },
-    userToken
+    userToken,
   );
 
   console.log(`✅ Precio actualizado exitosamente`);
@@ -403,7 +577,7 @@ async function executeUpdateProductInfo(params, userToken) {
 
   if (!productInfo.id || !productInfo.tipo) {
     throw new Error(
-      "Se requiere product_id o product_name. Si usas product_id, también necesitas product_name para determinar el tipo."
+      "Se requiere product_id o product_name. Si usas product_id, también necesitas product_name para determinar el tipo.",
     );
   }
 
@@ -426,17 +600,17 @@ async function executeUpdateProductInfo(params, userToken) {
   if (is_available !== undefined) {
     updateData.disponible = is_available;
     console.warn(
-      "⚠️ Campo 'disponible' puede no estar implementado en Laravel"
+      "⚠️ Campo 'disponible' puede no estar implementado en Laravel",
     );
   }
   if (stock !== undefined) {
     console.warn(
-      "⚠️ Campo 'stock' no está implementado en Laravel. Se ignora."
+      "⚠️ Campo 'stock' no está implementado en Laravel. Se ignora.",
     );
   }
   if (category !== undefined) {
     console.warn(
-      "⚠️ Campo 'category' no se puede actualizar en este endpoint. Use la API de Laravel directamente."
+      "⚠️ Campo 'category' no se puede actualizar en este endpoint. Use la API de Laravel directamente.",
     );
   }
 
@@ -447,14 +621,14 @@ async function executeUpdateProductInfo(params, userToken) {
 
   console.log(
     `📝 Actualizando ${productInfo.tipo} ID ${productInfo.id} con:`,
-    updateData
+    updateData,
   );
 
   const result = await callLaravelAPI(
     `/api/aura/productos/${productInfo.tipo}/${productInfo.id}`,
     "PUT",
     updateData,
-    userToken
+    userToken,
   );
 
   const changedFields = Object.keys(updateData).map((key) => {
@@ -467,7 +641,9 @@ async function executeUpdateProductInfo(params, userToken) {
     return fieldNames[key] || key;
   });
 
-  console.log(`✅ Producto actualizado exitosamente: ${changedFields.join(", ")}`);
+  console.log(
+    `✅ Producto actualizado exitosamente: ${changedFields.join(", ")}`,
+  );
 
   return {
     success: true,
@@ -486,7 +662,7 @@ async function executeUpdateProductStock(params, userToken) {
   // NOTA: Laravel no tiene endpoint específico para stock
   // Usamos update_product_info como alternativa
   console.warn(
-    "⚠️ Laravel no tiene endpoint específico para stock. Usando update_product_info."
+    "⚠️ Laravel no tiene endpoint específico para stock. Usando update_product_info.",
   );
 
   return await executeUpdateProductInfo(
@@ -495,7 +671,7 @@ async function executeUpdateProductStock(params, userToken) {
       product_name,
       stock: new_stock,
     },
-    userToken
+    userToken,
   );
 }
 
@@ -536,7 +712,7 @@ async function executeCreateProduct(params, userToken) {
     if (typeof category === "number" || /^\d+$/.test(categoryStr)) {
       finalFamilyId = parseInt(categoryStr);
       console.log(
-        `✅ Category "${category}" detectado como número. Usando como family_id: ${finalFamilyId}`
+        `✅ Category "${category}" detectado como número. Usando como family_id: ${finalFamilyId}`,
       );
     } else {
       // Si category es string (nombre), buscar la familia
@@ -546,12 +722,15 @@ async function executeCreateProduct(params, userToken) {
           `/api/aura/familias`,
           "GET",
           null,
-          userToken
+          userToken,
         );
 
         console.log(`📦 Tipo de respuesta:`, typeof response);
         console.log(`📦 Es array:`, Array.isArray(response));
-        console.log(`📦 Familias recibidas:`, JSON.stringify(response, null, 2));
+        console.log(
+          `📦 Familias recibidas:`,
+          JSON.stringify(response, null, 2),
+        );
 
         // Manejar diferentes estructuras de respuesta
         let families = response;
@@ -577,7 +756,7 @@ async function executeCreateProduct(params, userToken) {
           finalFamilyId = foundFamily.id;
           const familyName = foundFamily.name || foundFamily.nombre;
           console.log(
-            `✅ Familia encontrada: ${familyName} (ID: ${finalFamilyId})`
+            `✅ Familia encontrada: ${familyName} (ID: ${finalFamilyId})`,
           );
         } else {
           // No se encontró la familia, devolver lista de familias disponibles
@@ -585,9 +764,9 @@ async function executeCreateProduct(params, userToken) {
             .map((f) => f.name || f.nombre || "Sin nombre")
             .filter((name) => name !== "Sin nombre")
             .join(", ");
-          
+
           throw new Error(
-            `No se encontró una familia llamada "${category}". Familias disponibles: ${availableFamilies || "ninguna"}.`
+            `No se encontró una familia llamada "${category}". Familias disponibles: ${availableFamilies || "ninguna"}.`,
           );
         }
       } catch (error) {
@@ -599,14 +778,14 @@ async function executeCreateProduct(params, userToken) {
   // Si aún no tenemos family_id, mostrar familias disponibles al usuario
   if (!finalFamilyId) {
     console.warn(
-      "⚠️ No se proporcionó family_id ni category. Solicitando al usuario..."
+      "⚠️ No se proporcionó family_id ni category. Solicitando al usuario...",
     );
     try {
       const response = await callLaravelAPI(
         `/api/aura/familias`,
         "GET",
         null,
-        userToken
+        userToken,
       );
 
       let families = response;
@@ -624,14 +803,14 @@ async function executeCreateProduct(params, userToken) {
         .join(", ");
 
       throw new Error(
-        `Para crear el producto "${name}" necesito saber a qué categoría pertenece. Familias disponibles: ${availableFamilies || "ninguna"}. Por favor, especifica la categoría.`
+        `Para crear el producto "${name}" necesito saber a qué categoría pertenece. Familias disponibles: ${availableFamilies || "ninguna"}. Por favor, especifica la categoría.`,
       );
     } catch (error) {
       if (error.message.includes("Familias disponibles")) {
         throw error;
       }
       throw new Error(
-        `Se requiere especificar la categoría del producto. ${error.message}`
+        `Se requiere especificar la categoría del producto. ${error.message}`,
       );
     }
   }
@@ -646,24 +825,24 @@ async function executeCreateProduct(params, userToken) {
 
   console.log(`📤 Enviando datos a Laravel:`, createData);
   console.log(
-    `📍 Endpoint completo: ${LARAVEL_API_URL}/api/aura/productos/${tipo}`
+    `📍 Endpoint completo: ${LARAVEL_API_URL}/api/aura/productos/${tipo}`,
   );
 
   const result = await callLaravelAPI(
     `/api/aura/productos/${tipo}`,
     "POST",
     createData,
-    userToken
+    userToken,
   );
 
   console.log(
     `✅ Respuesta de Laravel recibida:`,
-    JSON.stringify(result, null, 2)
+    JSON.stringify(result, null, 2),
   );
 
   if (stock !== undefined && stock > 0) {
     console.warn(
-      "⚠️ Campo 'stock' no está implementado en Laravel. Se ignora."
+      "⚠️ Campo 'stock' no está implementado en Laravel. Se ignora.",
     );
   }
 
@@ -701,19 +880,19 @@ async function executeDeleteProduct(params, userToken) {
 
   if (!productInfo.id || !productInfo.tipo) {
     throw new Error(
-      "Se requiere product_id o product_name. Si usas product_id, también necesitas product_name para determinar el tipo."
+      "Se requiere product_id o product_name. Si usas product_id, también necesitas product_name para determinar el tipo.",
     );
   }
 
   console.log(
-    `🗑️ Eliminando ${productInfo.tipo} ID ${productInfo.id} "${product_name || 'sin nombre'}"`
+    `🗑️ Eliminando ${productInfo.tipo} ID ${productInfo.id} "${product_name || "sin nombre"}"`,
   );
 
   const result = await callLaravelAPI(
     `/api/aura/productos/${productInfo.tipo}/${productInfo.id}`,
     "DELETE",
     null,
-    userToken
+    userToken,
   );
 
   console.log(`✅ Producto eliminado exitosamente`);
@@ -750,15 +929,23 @@ async function executeGenerateSalesReport(params, userToken) {
 
     // Validar que las fechas sean válidas
     if (!dateRange.start || !dateRange.end) {
-      throw new Error("No se pudieron calcular las fechas del período solicitado");
+      throw new Error(
+        "No se pudieron calcular las fechas del período solicitado",
+      );
     }
 
-    const format = params.format || "json";
+    let format = params.format || "json";
+
+    // Normalizar formato (excel -> xlsx)
+    if (format === "excel") {
+      format = "xlsx";
+    }
 
     // Validar formato
-    const validFormats = ["json", "view", "pdf", "excel"];
+    const validFormats = ["json", "view", "pdf", "xlsx", "csv"];
     if (!validFormats.includes(format)) {
       console.warn(`⚠️ Formato "${format}" no válido, usando "json"`);
+      format = "json";
     }
 
     // 2. Construir query params para Laravel
@@ -767,6 +954,11 @@ async function executeGenerateSalesReport(params, userToken) {
       fecha_fin: dateRange.end,
       formato: format,
     });
+
+    // Si es un formato de descarga (PDF, Excel, CSV), agregar flag download=1
+    if (format === "pdf" || format === "xlsx" || format === "csv") {
+      queryParams.append("download", "1");
+    }
 
     // 3. ENDPOINT CORREGIDO (Laravel usa /api/aura/reportes/ventas)
     const endpoint = `/api/aura/reportes/ventas?${queryParams.toString()}`;
@@ -779,7 +971,7 @@ async function executeGenerateSalesReport(params, userToken) {
       endpoint,
       "GET",
       null,
-      userToken
+      userToken,
     );
 
     console.log(`✅ Reporte de ventas recibido de Laravel`);
@@ -792,9 +984,17 @@ async function executeGenerateSalesReport(params, userToken) {
         console.log(`🎫 Total tickets: ${resumen.total_tickets || 0}`);
       }
 
+      // Generar mensaje con el reporte y pregunta sobre exportación
+      const reportMessage = formatReportSummaryMessage(
+        laravelResponse,
+        params,
+        dateRange,
+      );
+      const messageWithPrompt = `${reportMessage}\n\n📄 ¿Deseas exportar este reporte?\n- **Excel** (.xlsx) - Con formato y múltiples hojas\n- **CSV** (.csv) - Excel simple, compatible con todo\n- **PDF** (.pdf) - Para imprimir o compartir\n\n¿Qué formato prefieres?`;
+
       return {
         success: true,
-        message: formatReportSummaryMessage(laravelResponse, params, dateRange),
+        message: messageWithPrompt,
         data: laravelResponse.data || laravelResponse,
         display_type: "report_view",
         period: {
@@ -802,15 +1002,93 @@ async function executeGenerateSalesReport(params, userToken) {
           end: dateRange.end,
           description: getPeriodDescription(params, dateRange),
         },
+        // Indicador para que el LLM sepa que debe esperar respuesta sobre formato
+        expects_format_response: true,
+        available_formats: ["xlsx", "csv", "pdf"],
       };
     } else {
-      // PDF o Excel
-      console.log(`📥 Reporte ${format.toUpperCase()} generado para descarga`);
-      return {
+      // PDF, Excel o CSV - Laravel devuelve el archivo directamente
+      console.log(`\n========================================`);
+      console.log(`📥 FORMATO DE DESCARGA: ${format.toUpperCase()}`);
+      console.log(`========================================`);
+      console.log(`📥 Respuesta de Laravel (tipo):`, typeof laravelResponse);
+      console.log(
+        `📥 Respuesta de Laravel (keys):`,
+        Object.keys(laravelResponse || {}),
+      );
+      console.log(
+        `📥 Respuesta completa:`,
+        JSON.stringify(laravelResponse, null, 2),
+      );
+      console.log(`📥 ¿Es archivo? (is_file):`, laravelResponse.is_file);
+      console.log(`📥 URL de descarga:`, laravelResponse.download_url);
+      console.log(`📥 Nombre de archivo:`, laravelResponse.filename);
+      console.log(`========================================\n`);
+
+      // Si Laravel devolvió información del archivo
+      if (laravelResponse.is_file) {
+        console.log(
+          `✅ ARCHIVO DETECTADO - Devolviendo respuesta con botón de descarga`,
+        );
+
+        const response = {
+          success: true,
+          message: `✅ Reporte ${format.toUpperCase()} generado exitosamente. Haz clic en el botón de descarga para obtener el archivo.`,
+          download_url: laravelResponse.download_url,
+          filename:
+            laravelResponse.filename ||
+            `reporte_ventas_${dateRange.start}_${dateRange.end}.${format}`,
+          display_type: "download",
+          period: {
+            start: dateRange.start,
+            end: dateRange.end,
+            description: getPeriodDescription(params, dateRange),
+          },
+        };
+
+        console.log(
+          `✅ Respuesta que se enviará al frontend:`,
+          JSON.stringify(response, null, 2),
+        );
+        return response;
+      }
+
+      // Fallback: si no se detectó como archivo pero es un formato de descarga,
+      // puede ser que Laravel devolvió JSON con la URL de descarga
+      if (laravelResponse.download_url) {
+        console.log(`✅ URL DE DESCARGA ENCONTRADA EN JSON (fallback 1)`);
+
+        const response = {
+          success: true,
+          message: `✅ Reporte ${format.toUpperCase()} generado exitosamente. Haz clic en el botón de descarga para obtener el archivo.`,
+          download_url: laravelResponse.download_url,
+          filename:
+            laravelResponse.filename ||
+            `reporte_ventas_${dateRange.start}_${dateRange.end}.${format}`,
+          display_type: "download",
+          period: {
+            start: dateRange.start,
+            end: dateRange.end,
+            description: getPeriodDescription(params, dateRange),
+          },
+        };
+
+        console.log(
+          `✅ Respuesta (fallback 1):`,
+          JSON.stringify(response, null, 2),
+        );
+        return response;
+      }
+
+      // Último fallback: construir URL de descarga completa
+      console.log(`⚠️ NO SE DETECTÓ ARCHIVO NI HAY URL - Usando fallback 2`);
+      const downloadUrl = `${LARAVEL_API_URL}${endpoint}`;
+      console.log(`   URL construida: ${downloadUrl}`);
+
+      const response = {
         success: true,
-        message: `✅ Reporte ${format.toUpperCase()} generado exitosamente`,
-        download_url:
-          laravelResponse.download_url || laravelResponse.data?.download_url,
+        message: `✅ Reporte ${format.toUpperCase()} generado exitosamente. Haz clic en el botón de descarga para obtener el archivo.`,
+        download_url: downloadUrl,
         filename: `reporte_ventas_${dateRange.start}_${dateRange.end}.${format}`,
         display_type: "download",
         period: {
@@ -819,6 +1097,12 @@ async function executeGenerateSalesReport(params, userToken) {
           description: getPeriodDescription(params, dateRange),
         },
       };
+
+      console.log(
+        `✅ Respuesta (fallback 2):`,
+        JSON.stringify(response, null, 2),
+      );
+      return response;
     }
   } catch (error) {
     console.error(`❌ Error generando reporte de ventas:`, error);
@@ -936,7 +1220,7 @@ function getQuarterRangeFromString(quarterStr) {
       parseInt(
         parts
           .find((p) => p.startsWith("Q") || /^[1-4]$/.test(p))
-          ?.replace("Q", "")
+          ?.replace("Q", ""),
       ) || 1;
   } else {
     const quarterNames = {
@@ -959,7 +1243,7 @@ function getQuarterRangeFromString(quarterStr) {
   return {
     start: `${year}-${String(startMonth).padStart(2, "0")}-01`,
     end: `${year}-${String(endMonth).padStart(2, "0")}-${String(
-      lastDay
+      lastDay,
     ).padStart(2, "0")}`,
   };
 }
@@ -997,7 +1281,7 @@ function getPeriodDescription(params, dateRange) {
       return "Año actual";
     case "custom":
       return `Del ${formatDate(dateRange.start)} al ${formatDate(
-        dateRange.end
+        dateRange.end,
       )}`;
     default:
       return "Período personalizado";
@@ -1096,7 +1380,7 @@ function formatReportSummaryMessage(laravelData, params, dateRange) {
     const emoji = porcentaje > 0 ? "📈" : "📉";
     const texto = porcentaje > 0 ? "más" : "menos";
     message += `${emoji} **Comparativa:** ${Math.abs(porcentaje).toFixed(
-      1
+      1,
     )}% ${texto} que período anterior\n`;
   }
 
@@ -1206,10 +1490,10 @@ async function executeSendMarketingEmail(params, userToken) {
 
   const validSegments = ["all", "vip", "regular", "new", "inactive"];
   const finalSegment = target_segment || "all";
-  
+
   if (!validSegments.includes(finalSegment)) {
     throw new Error(
-      `Segmento no válido. Debe ser uno de: ${validSegments.join(", ")}`
+      `Segmento no válido. Debe ser uno de: ${validSegments.join(", ")}`,
     );
   }
 
@@ -1256,7 +1540,7 @@ async function executeSendMarketingEmail(params, userToken) {
       `/api/aura/marketing/enviar-email`,
       "POST",
       emailCampaignData,
-      userToken
+      userToken,
     );
 
     console.log(`✅ Campaña de email enviada exitosamente`);
@@ -1301,18 +1585,24 @@ async function executeSendPersonalizedMessage(params, userToken) {
       subject: params.subject,
       message_content: params.message,
     },
-    userToken
+    userToken,
   );
 }
 
 async function executeCreateLoyaltyCampaign(params, userToken) {
   console.log(`🎁 Creando campaña de fidelización:`, params);
 
-  const { campaign_name, reward_type, reward_amount, requirements, duration_days } = params;
+  const {
+    campaign_name,
+    reward_type,
+    reward_amount,
+    requirements,
+    duration_days,
+  } = params;
 
   // Generar contenido para email de la campaña
   const subject = `Nueva campaña de fidelización: ${campaign_name}`;
-  const message_content = `¡Participa en nuestra nueva campaña "${campaign_name}"!\n\n${requirements || 'Participa y gana recompensas.'}\n\nRecompensa: ${reward_type} ${reward_amount ? `(${reward_amount})` : ''}\nDuración: ${duration_days || 30} días`;
+  const message_content = `¡Participa en nuestra nueva campaña "${campaign_name}"!\n\n${requirements || "Participa y gana recompensas."}\n\nRecompensa: ${reward_type} ${reward_amount ? `(${reward_amount})` : ""}\nDuración: ${duration_days || 30} días`;
 
   // Enviar email anunciando la campaña
   return await executeSendMarketingEmail(
@@ -1321,10 +1611,14 @@ async function executeCreateLoyaltyCampaign(params, userToken) {
       campaign_type: "loyalty_reward",
       subject: subject,
       message_content: message_content,
-      points_offer: reward_type === "points" ? { points_amount: reward_amount } : null,
-      discount_info: reward_type === "discount" ? { discount_percentage: reward_amount } : null,
+      points_offer:
+        reward_type === "points" ? { points_amount: reward_amount } : null,
+      discount_info:
+        reward_type === "discount"
+          ? { discount_percentage: reward_amount }
+          : null,
       call_to_action: "Participa ahora",
     },
-    userToken
+    userToken,
   );
 }

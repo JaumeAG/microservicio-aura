@@ -9,6 +9,11 @@ import { getProviderManager } from "./aiProviderRotation.js";
 const providerManager = getProviderManager();
 
 // ==========================================
+// CONSTANTES DINÁMICAS
+// ==========================================
+const CURRENT_YEAR = new Date().getFullYear();
+
+// ==========================================
 // MAPEO DE FUNCIONES DISPONIBLES
 // ==========================================
 
@@ -233,23 +238,21 @@ const AVAILABLE_FUNCTIONS = [
         },
         specific_month: {
           type: "string",
-          description:
-            "Mes específico (formato YYYY-MM o nombre del mes). Ejemplo: '2024-01' o 'enero 2024'",
+          description: `Mes específico (formato YYYY-MM o nombre del mes). Ejemplo: '${CURRENT_YEAR}-01' o 'enero ${CURRENT_YEAR}'`,
         },
         specific_quarter: {
           type: "string",
-          description:
-            "Trimestre específico (formato YYYY-Q# o texto). Ejemplo: '2024-Q1' o 'primer trimestre 2024'",
+          description: `Trimestre específico (formato YYYY-Q# o texto). Ejemplo: '${CURRENT_YEAR}-Q1' o 'primer trimestre ${CURRENT_YEAR}'`,
         },
         specific_year: {
           type: "string",
-          description: "Año específico. Ejemplo: '2024'",
+          description: `Año específico. Ejemplo: '${CURRENT_YEAR}'`,
         },
         format: {
           type: "string",
-          enum: ["view", "pdf", "excel"],
+          enum: ["view", "pdf", "excel", "xlsx", "csv"],
           description:
-            "Formato de salida: 'view' (ver en pantalla), 'pdf' (descargar PDF), 'excel' (descargar Excel)",
+            "Formato de salida: 'view' (ver en pantalla), 'pdf' (PDF), 'excel'/'xlsx' (Excel con formato), 'csv' (Excel simple)",
           default: "view",
         },
       },
@@ -438,9 +441,12 @@ const AVAILABLE_FUNCTIONS = [
           type: "string",
           enum: ["all", "vip", "regular", "new", "inactive"],
           description:
-            "Segmento de clientes a los que enviar: " +
-            "'all' (todos), 'vip' (clientes VIP), 'regular' (clientes regulares), " +
-            "'new' (nuevos clientes), 'inactive' (clientes inactivos)",
+            "Segmento de clientes a los que enviar. " +
+            "IMPORTANTE: Si el usuario NO especifica un segmento específico (como 'VIP', 'nuevos clientes', etc.), " +
+            "SIEMPRE usa 'all' para enviar a todos los clientes. " +
+            "Opciones: 'all' (todos los clientes - USAR POR DEFECTO), 'vip' (solo clientes VIP), " +
+            "'regular' (clientes regulares), 'new' (nuevos clientes), 'inactive' (clientes inactivos). " +
+            "Solo usa segmentos específicos si el usuario explícitamente menciona 'VIP', 'nuevos', 'inactivos', etc.",
           default: "all",
         },
         campaign_type: {
@@ -539,6 +545,12 @@ const AVAILABLE_FUNCTIONS = [
 
 const SYSTEM_PROMPT = `Eres un asistente de IA especializado en interpretar instrucciones de lenguaje natural para un sistema de gestión de restaurantes/negocios.
 
+⚠️ INFORMACIÓN CRÍTICA DE CONTEXTO TEMPORAL ⚠️
+- ESTAMOS EN EL AÑO ${CURRENT_YEAR}
+- Cuando el usuario mencione un mes SIN especificar año (ej: "enero", "febrero"), SIEMPRE debes asumir que se refiere a ${CURRENT_YEAR}
+- Cuando el usuario diga "este año" o "año actual", se refiere a ${CURRENT_YEAR}
+- NUNCA uses años pasados a menos que el usuario lo especifique explícitamente
+
 Tu tarea es analizar la instrucción del usuario y convertirla en una llamada a función estructurada.
 
 FUNCIONES DISPONIBLES:
@@ -564,13 +576,31 @@ REGLAS IMPORTANTES:
      * Se quiera activar/desactivar un producto
      * Se quiera cambiar cualquier información del producto
 
-2. **Interpretación de fechas**:
+2. **Interpretación de fechas (IMPORTANTE: Estamos en ${CURRENT_YEAR})**:
    - "hoy" → period_type: "today"
-   - "este mes" / "mes actual" → period_type: "month"
-   - "enero" / "enero 2024" → period_type: "month", specific_month: "2024-01"
-   - "trimestre" → period_type: "quarter"
-   - "año" / "2024" → period_type: "year"
-   - "del 1 al 31 de enero" → period_type: "custom", start_date: "2024-01-01", end_date: "2024-01-31"
+   - "este mes" / "mes actual" → period_type: "month" (usa el mes actual de ${CURRENT_YEAR})
+   - "enero" (sin año) → period_type: "month", specific_month: "${CURRENT_YEAR}-01" (SIEMPRE usa ${CURRENT_YEAR} si no se especifica año)
+   - "enero ${CURRENT_YEAR}" → period_type: "month", specific_month: "${CURRENT_YEAR}-01"
+   - "trimestre" → period_type: "quarter" (usa el trimestre actual de ${CURRENT_YEAR})
+   - "año" / "año actual" → period_type: "year" (usa ${CURRENT_YEAR})
+   - "${CURRENT_YEAR}" → period_type: "year", specific_year: "${CURRENT_YEAR}"
+   - "del 1 al 31 de enero" (sin año) → period_type: "custom", start_date: "${CURRENT_YEAR}-01-01", end_date: "${CURRENT_YEAR}-01-31"
+
+2.1. **Formato de reportes (generate_sales_report) - CONTEXTO CONVERSACIONAL**:
+   - Por defecto: format: "view" (muestra en pantalla)
+   - **FORMATOS DISPONIBLES**:
+     * "excel" / "xlsx" → Excel con formato profesional (.xlsx)
+     * "csv" → Excel simple compatible universal (.csv)
+     * "pdf" → PDF para imprimir o compartir
+   - **MUY IMPORTANTE**: Si en el CONTEXTO de la conversación hay un reporte reciente Y el usuario dice solo:
+     * "Excel" / "xlsx" / "si, excel" / "en excel" → format: "xlsx"
+     * "CSV" / "csv" / "excel simple" → format: "csv"
+     * "PDF" / "pdf" / "si, pdf" / "en pdf" → format: "pdf"
+     * "No" / "no gracias" / "ahora no" → Responde con mensaje conversacional: "De acuerdo, si necesitas el reporte más tarde avísame"
+   - Si el contexto muestra que acaba de generar un reporte de "hoy" y el usuario dice "Excel", interpreta: { "function": "generate_sales_report", "arguments": { "period_type": "today", "format": "xlsx" }}
+   - Si el contexto muestra reporte del "mes" y dice "CSV", interpreta: { "function": "generate_sales_report", "arguments": { "period_type": "month", "format": "csv" }}
+   - Si el contexto muestra reporte del "mes" y dice "PDF", interpreta: { "function": "generate_sales_report", "arguments": { "period_type": "month", "format": "pdf" }}
+   - NO pidas más información si ya hay un reporte reciente en el contexto
 
 3. **Nombres de productos**:
    - Si el usuario dice "la hamburguesa", extrae product_name: "hamburguesa"
@@ -593,6 +623,12 @@ REGLAS IMPORTANTES:
      * "Notifica a los clientes de los nuevos precios"
      * "Haz una campaña de puntos por email"
      * "Envía una promoción a..."
+   - IMPORTANTE SOBRE SEGMENTOS:
+     * Si el usuario dice "envía un correo a los clientes" SIN especificar un segmento (VIP, nuevos, etc.), 
+       SIEMPRE usa "target_segment": "all"
+     * Solo usa segmentos específicos ("vip", "new", "regular", "inactive") si el usuario EXPLÍCITAMENTE 
+       menciona ese segmento (ej: "a los clientes VIP", "a los nuevos clientes", etc.)
+     * Por defecto, SIEMPRE usa "all" para enviar a todos los clientes
    - IMPORTANTE: Extrae TODO el contenido que el usuario menciona y colócalo en "message_content"
    - Si menciona productos con precios, agrégalos en "products_mentioned"
    - Si menciona puntos, completa "points_offer"
@@ -680,21 +716,65 @@ Respuesta: { "function": "generate_sales_report", "arguments": { "period_type": 
 Usuario: "muéstrame el reporte de ventas de este mes"
 Respuesta: { "function": "generate_sales_report", "arguments": { "period_type": "month", "format": "view" }}
 
-Usuario: "genera un pdf con las ventas de enero"
-Respuesta: { "function": "generate_sales_report", "arguments": { "period_type": "month", "specific_month": "2024-01", "format": "pdf" }}
+Usuario: "reporte de enero"
+Respuesta: { "function": "generate_sales_report", "arguments": { "period_type": "month", "specific_month": "${CURRENT_YEAR}-01", "format": "view" }}
 
-Usuario: "ventas del primer trimestre del 2024"
-Respuesta: { "function": "generate_sales_report", "arguments": { "period_type": "quarter", "specific_quarter": "2024-Q1", "format": "view" }}
+Usuario: "ventas de febrero"
+Respuesta: { "function": "generate_sales_report", "arguments": { "period_type": "month", "specific_month": "${CURRENT_YEAR}-02", "format": "view" }}
+
+Usuario: "genera un pdf con las ventas de enero"
+Respuesta: { "function": "generate_sales_report", "arguments": { "period_type": "month", "specific_month": "${CURRENT_YEAR}-01", "format": "pdf" }}
+
+Usuario: "ventas del primer trimestre del ${CURRENT_YEAR}"
+Respuesta: { "function": "generate_sales_report", "arguments": { "period_type": "quarter", "specific_quarter": "${CURRENT_YEAR}-Q1", "format": "view" }}
+
+**Reportes - Exportar después de ver (CASOS CONTEXTUALES MUY IMPORTANTES):**
+Contexto previo: "📊 Reporte de Ventas del día de hoy... ¿Qué formato prefieres?"
+Usuario: "excel" / "Excel" / "xlsx" / "en excel"
+Respuesta: { "function": "generate_sales_report", "arguments": { "period_type": "today", "format": "xlsx" }}
+
+Contexto previo: "📊 Reporte de Ventas del día de hoy... ¿Qué formato prefieres?"
+Usuario: "csv" / "CSV" / "excel simple"
+Respuesta: { "function": "generate_sales_report", "arguments": { "period_type": "today", "format": "csv" }}
+
+Contexto previo: "📊 Reporte de Ventas del mes... ¿Qué formato prefieres?"
+Usuario: "pdf" / "PDF" / "en pdf"
+Respuesta: { "function": "generate_sales_report", "arguments": { "period_type": "month", "format": "pdf" }}
+
+Contexto previo: "📊 Reporte de Ventas... ¿Qué formato prefieres?"
+Usuario: "no" / "no gracias" / "no lo necesito"
+Respuesta: { "message": "De acuerdo, si necesitas el reporte más tarde avísame." }
+
+**EJEMPLO REAL - Exportar CSV después de ver reporte:**
+Contexto previo del asistente: "📊 ✅ **Reporte generado exitosamente**\n\n📊 **Período: Hoy**\n📅 Del 2026-01-16 al 2026-01-16\n...\n📄 ¿Deseas exportar este reporte?\n- **Excel** (.xlsx)\n- **CSV** (.csv)\n- **PDF** (.pdf)\n\n¿Qué formato prefieres?"
+Usuario: "CSV"
+Respuesta: { "function": "generate_sales_report", "arguments": { "period_type": "today", "format": "csv" }}
+
+**REGLA ABSOLUTA:**
+Si el contexto muestra que el asistente acaba de mostrar un reporte con "Período: Hoy" y pregunta "¿Qué formato prefieres?", y el usuario responde SOLO con "CSV", "Excel" o "PDF", SIEMPRE interpreta como exportar ese reporte con ese formato, usando period_type: "today" (o el período detectado del contexto).
+
+**REGLA CRÍTICA DE CONTEXTO:**
+Si el usuario dice solo "Excel"/"CSV"/"PDF" Y en el contexto reciente (último mensaje) hay:
+- Un reporte de ventas mostrado
+- Una pregunta sobre el formato de exportación
+ENTONCES: Genera generate_sales_report con el mismo period_type pero cambiando solo el formato:
+  - "Excel" / "xlsx" → format: "xlsx" (Excel con formato)
+  - "CSV" → format: "csv" (Excel simple)
+  - "PDF" → format: "pdf" (PDF)
+NO pidas más información, el contexto ya tiene todo lo necesario.
 
 **Marketing - Correos:**
+Usuario: "Envía un correo a los clientes avisando de una nueva promoción"
+Respuesta: { "function": "send_marketing_email", "arguments": { "target_segment": "all", "campaign_type": "general_announcement", "subject": "Nueva promoción disponible", "message_content": "Tenemos una nueva promoción disponible para ti. ¡No te la pierdas!", "call_to_action": "Visítanos pronto" }}
+
 Usuario: "Envía un correo a todos los clientes avisando que la pizza margarita ahora cuesta 15 euros"
 Respuesta: { "function": "send_marketing_email", "arguments": { "target_segment": "all", "campaign_type": "price_update", "subject": "Actualización de precios - Pizza Margarita", "message_content": "Queremos informarte que nuestra deliciosa Pizza Margarita tiene un nuevo precio de 15 euros. ¡Ven a disfrutarla!", "products_mentioned": [{"name": "Pizza Margarita", "new_price": 15}], "call_to_action": "Visítanos hoy" }}
 
 Usuario: "Manda un email a los clientes VIP con una promoción de triple puntos en compras superiores a 30 euros hasta fin de mes"
-Respuesta: { "function": "send_marketing_email", "arguments": { "target_segment": "vip", "campaign_type": "points_promo", "subject": "¡Triple puntos para ti! - Promoción exclusiva VIP", "message_content": "Como cliente VIP, disfruta de TRIPLE PUNTOS en todas tus compras superiores a 30 euros. Válido hasta fin de mes.", "points_offer": {"points_amount": 3, "minimum_purchase": 30, "expiry_date": "2025-12-31"}, "call_to_action": "Canjea tus puntos ahora" }}
+Respuesta: { "function": "send_marketing_email", "arguments": { "target_segment": "vip", "campaign_type": "points_promo", "subject": "¡Triple puntos para ti! - Promoción exclusiva VIP", "message_content": "Como cliente VIP, disfruta de TRIPLE PUNTOS en todas tus compras superiores a 30 euros. Válido hasta fin de mes.", "points_offer": {"points_amount": 3, "minimum_purchase": 30, "expiry_date": "${CURRENT_YEAR}-12-31"}, "call_to_action": "Canjea tus puntos ahora" }}
 
-Usuario: "Notifica a todos sobre nuestro menú de verano con 20% de descuento usando el código VERANO2025"
-Respuesta: { "function": "send_marketing_email", "arguments": { "target_segment": "all", "campaign_type": "seasonal_promo", "subject": "🌞 ¡Menú de Verano con 20% de descuento!", "message_content": "Disfruta de nuestro nuevo menú de verano con sabores frescos y refrescantes. Usa el código VERANO2025 para obtener un 20% de descuento en toda tu compra.", "discount_info": {"discount_percentage": 20, "discount_code": "VERANO2025"}, "call_to_action": "Ver menú de verano" }}
+Usuario: "Notifica a todos sobre nuestro menú de verano con 20% de descuento usando el código VERANO${CURRENT_YEAR}"
+Respuesta: { "function": "send_marketing_email", "arguments": { "target_segment": "all", "campaign_type": "seasonal_promo", "subject": "🌞 ¡Menú de Verano con 20% de descuento!", "message_content": "Disfruta de nuestro nuevo menú de verano con sabores frescos y refrescantes. Usa el código VERANO${CURRENT_YEAR} para obtener un 20% de descuento en toda tu compra.", "discount_info": {"discount_percentage": 20, "discount_code": "VERANO${CURRENT_YEAR}"}, "call_to_action": "Ver menú de verano" }}
 
 **IMPORTANTE - Dos tipos de respuesta:**
 
@@ -730,25 +810,140 @@ NO incluyas explicaciones fuera del JSON, solo responde con el JSON.`;
 
 export async function interpretInstruction(instruction, context = {}) {
   try {
-    console.log("\n🤖 Iniciando interpretación con sistema de rotación de IA...");
+    console.log(
+      "\n🤖 Iniciando interpretación con sistema de rotación de IA...",
+    );
     console.log(`   Instrucción: "${instruction}"`);
 
-    // Construir el prompt completo
-    const userPrompt = `CONTEXTO ADICIONAL:
-${context ? JSON.stringify(context, null, 2) : "Sin contexto adicional"}
+    // Construir historial de mensajes previos si existe
+    let contextSection = "Sin contexto adicional";
 
-INSTRUCCIÓN DEL USUARIO:
+    if (context?.last_messages && context.last_messages.length > 0) {
+      contextSection = "HISTORIAL DE CONVERSACIÓN RECIENTE:\n";
+      context.last_messages.forEach((msg, index) => {
+        const role = msg.role === "user" ? "Usuario" : "Asistente (AURA)";
+        contextSection += `${index + 1}. ${role}: ${msg.content}\n`;
+      });
+
+      // Detectar si el último mensaje del asistente pregunta sobre formato de exportación
+      const lastAssistantMessage = context.last_messages
+        .filter((msg) => msg.role === "assistant")
+        .slice(-1)[0];
+
+      const isExportQuestion =
+        lastAssistantMessage &&
+        (lastAssistantMessage.content.includes("¿Qué formato prefieres?") ||
+          lastAssistantMessage.content.includes("exportar") ||
+          lastAssistantMessage.content.includes("Excel") ||
+          lastAssistantMessage.content.includes("PDF") ||
+          lastAssistantMessage.content.includes("CSV"));
+
+      // Detectar el período del reporte anterior con mayor precisión
+      let detectedPeriod = null;
+      if (lastAssistantMessage) {
+        const content = lastAssistantMessage.content.toLowerCase();
+
+        // Buscar patrones específicos de período
+        if (
+          content.includes("período: hoy") ||
+          content.includes("periodo: hoy") ||
+          (content.includes("hoy") &&
+            (content.includes("reporte") || content.includes("ventas")))
+        ) {
+          detectedPeriod = "today";
+        } else if (
+          content.includes("período: mes") ||
+          content.includes("periodo: mes") ||
+          content.includes("este mes") ||
+          content.includes("mes actual") ||
+          (content.includes("mes") &&
+            (content.includes("reporte") || content.includes("ventas")))
+        ) {
+          detectedPeriod = "month";
+        } else if (
+          content.includes("trimestre") ||
+          content.includes("quarter")
+        ) {
+          detectedPeriod = "quarter";
+        } else if (
+          content.includes("año") ||
+          content.includes("year") ||
+          /\b(202[0-9]|203[0-9])\b/.test(content)
+        ) {
+          detectedPeriod = "year";
+        }
+
+        // Si no se detectó, buscar en todo el contexto
+        if (!detectedPeriod) {
+          const allMessages = context.last_messages
+            .map((msg) => msg.content.toLowerCase())
+            .join(" ");
+          if (
+            allMessages.includes("hoy") &&
+            (allMessages.includes("reporte") || allMessages.includes("ventas"))
+          ) {
+            detectedPeriod = "today";
+          } else if (
+            allMessages.includes("mes") &&
+            (allMessages.includes("reporte") || allMessages.includes("ventas"))
+          ) {
+            detectedPeriod = "month";
+          }
+        }
+      }
+
+      if (isExportQuestion && detectedPeriod) {
+        contextSection += `\n⚠️ CONTEXTO CRÍTICO DETECTADO:\n`;
+        contextSection += `- El asistente acaba de mostrar un reporte de ventas y preguntó sobre el formato de exportación.\n`;
+        contextSection += `- El período detectado del reporte anterior es: "${detectedPeriod}"\n`;
+        contextSection += `- Si el usuario responde SOLO con "Excel", "CSV", "PDF", "xlsx", "pdf" o "csv",\n`;
+        contextSection += `  DEBES interpretar: { "function": "generate_sales_report", "arguments": { "period_type": "${detectedPeriod}", "format": "xlsx" o "csv" o "pdf" según corresponda } }\n`;
+        contextSection += `- NO generes un nuevo reporte completo, solo cambia el formato del reporte ya mostrado.\n`;
+        contextSection += `- NO pidas más información, usa el período detectado: "${detectedPeriod}"\n`;
+        contextSection += `- EJEMPLO: Si el usuario dice "csv", responde: { "function": "generate_sales_report", "arguments": { "period_type": "${detectedPeriod}", "format": "csv" } }\n`;
+      } else if (isExportQuestion) {
+        contextSection += `\n⚠️ CONTEXTO DETECTADO:\n`;
+        contextSection += `- El asistente acaba de mostrar un reporte y preguntó sobre formato de exportación.\n`;
+        contextSection += `- Si el usuario responde solo con "Excel"/"CSV"/"PDF", interpreta que quiere exportar el reporte mencionado.\n`;
+        contextSection += `- Intenta detectar el período del reporte anterior del contexto.\n`;
+        contextSection += `- Si detectas "hoy" o "Hoy" en el contexto, usa period_type: "today"\n`;
+        contextSection += `- Si detectas "mes" o "Mes" en el contexto, usa period_type: "month"\n`;
+      }
+
+      // Detección adicional: si el usuario dice solo "csv", "excel" o "pdf" sin más contexto
+      const userMessageLower = instruction.toLowerCase().trim();
+      const isSimpleFormatRequest =
+        (userMessageLower === "csv" ||
+          userMessageLower === "excel" ||
+          userMessageLower === "xlsx" ||
+          userMessageLower === "pdf") &&
+        isExportQuestion;
+
+      if (isSimpleFormatRequest && detectedPeriod) {
+        contextSection += `\n🎯 DETECCIÓN ESPECIAL:\n`;
+        contextSection += `- El usuario respondió con solo "${instruction}" después de ver un reporte.\n`;
+        contextSection += `- Esto es claramente una respuesta a la pregunta de formato de exportación.\n`;
+        contextSection += `- DEBES generar: { "function": "generate_sales_report", "arguments": { "period_type": "${detectedPeriod}", "format": "${userMessageLower === "excel" ? "xlsx" : userMessageLower}" } }\n`;
+      }
+    }
+
+    // Construir el prompt completo
+    const userPrompt = `${contextSection}
+
+INSTRUCCIÓN ACTUAL DEL USUARIO:
 "${instruction}"
 
-Analiza la instrucción y responde SOLO con JSON:`;
+Analiza la instrucción considerando el contexto de la conversación y responde SOLO con JSON:`;
 
-    console.log("\n📤 Enviando prompt a proveedor de IA con rotación automática...");
+    console.log(
+      "\n📤 Enviando prompt a proveedor de IA con rotación automática...",
+    );
 
     // Llamar al proveedor con rotación automática
     const result = await providerManager.callWithRotation(
       userPrompt,
       SYSTEM_PROMPT,
-      3 // Máximo 3 reintentos con rotación
+      3, // Máximo 3 reintentos con rotación
     );
 
     const text = result.response;
@@ -785,7 +980,7 @@ Analiza la instrucción y responde SOLO con JSON:`;
     console.log(`   Proveedor: ${usedProvider}`);
     console.log(`   Función: ${interpretation.function}`);
     console.log(
-      `   Confianza: ${(interpretation.confidence * 100).toFixed(1)}%`
+      `   Confianza: ${(interpretation.confidence * 100).toFixed(1)}%`,
     );
 
     return {
@@ -802,18 +997,18 @@ Analiza la instrucción y responde SOLO con JSON:`;
 
     // Manejo de errores específicos
     if (error.message.includes("API key")) {
-      throw new Error(
-        "API key inválida. Verifica las claves de API en .env"
-      );
+      throw new Error("API key inválida. Verifica las claves de API en .env");
     }
 
     if (error.message.includes("Timeout")) {
-      throw new Error("El proveedor de IA no respondió a tiempo. Intenta de nuevo.");
+      throw new Error(
+        "El proveedor de IA no respondió a tiempo. Intenta de nuevo.",
+      );
     }
 
     if (error.message.includes("JSON")) {
       throw new Error(
-        "No se pudo interpretar la respuesta de IA. La instrucción puede ser ambigua."
+        "No se pudo interpretar la respuesta de IA. La instrucción puede ser ambigua.",
       );
     }
 
@@ -829,11 +1024,7 @@ export async function testAIConnection() {
   try {
     console.log("\n🧪 Testeando conexión con sistema de IA...");
 
-    const result = await providerManager.callWithRotation(
-      "Di 'hola'",
-      "",
-      1
-    );
+    const result = await providerManager.callWithRotation("Di 'hola'", "", 1);
 
     console.log(`✅ Conexión exitosa con ${result.provider}`);
     console.log(`   Respuesta: ${result.response}`);

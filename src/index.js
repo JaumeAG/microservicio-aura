@@ -7,6 +7,9 @@ import { generateActionPreview } from "./services/businessService.js";
 import { executeAction, callLaravelAPI } from "./services/executionService.js";
 import { authenticate } from "./middleware/auth.js";
 import { validateRequest } from "./middleware/validation.js";
+// Importar env.js para ejecutar la validación de proveedores
+import "./config/env.js";
+import { formatUserFriendlyError } from "./utils/errorHandler.js";
 import { PORT } from "./config/env.js";
 
 // ==========================================
@@ -24,18 +27,10 @@ dotenv.config();
 // ==========================================
 // VALIDACIÓN DE VARIABLES DE ENTORNO CRÍTICAS
 // ==========================================
-const requiredEnvVars = ["GEMINI_API_KEY"];
-
-const missingVars = requiredEnvVars.filter((varName) => !process.env[varName]);
-
-if (missingVars.length > 0) {
-  console.error("❌ Error: Variables de entorno faltantes:");
-  missingVars.forEach((varName) => {
-    console.error(`   - ${varName}`);
-  });
-  console.error("\n💡 Asegúrate de tener un archivo .env configurado");
-  process.exit(1);
-}
+// La validación de proveedores de IA se hace en env.js
+// No requerimos específicamente GEMINI_API_KEY porque el sistema
+// soporta rotación entre múltiples proveedores (Gemini, OpenAI, Claude, Grok)
+// Si no hay ningún proveedor configurado, env.js lanzará un error y detendrá la ejecución
 
 const app = express();
 
@@ -44,6 +39,19 @@ const app = express();
 // ==========================================
 app.use(cors());
 app.use(express.json());
+
+// Middleware para asegurar UTF-8 en respuestas JSON
+app.use((req, res, next) => {
+  const originalJson = res.json;
+  res.json = function(data) {
+    res.charset = 'utf-8';
+    if (!res.getHeader('Content-Type')) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    }
+    return originalJson.call(this, data);
+  };
+  next();
+});
 
 // Middleware de logging
 app.use((req, res, next) => {
@@ -93,9 +101,14 @@ app.get("/ai/families", authenticate, async (req, res) => {
     });
   } catch (error) {
     console.error("\n❌ Error obteniendo familias:", error);
+    const friendlyError = formatUserFriendlyError(error);
+
     res.status(500).json({
       success: false,
-      error: error.message || "Error obteniendo familias",
+      error: friendlyError.message,
+      errorTitle: friendlyError.title,
+      errorSuggestion: friendlyError.suggestion,
+      technicalError: friendlyError.technical
     });
   }
 });
@@ -243,11 +256,15 @@ app.post(
       console.error("\n❌ Error en /ai/interpret:");
       console.error(error);
 
+      const friendlyError = formatUserFriendlyError(error);
+
       res.status(500).json({
         success: false,
-        error: error.message || "Error procesando la instrucción",
-        details:
-          process.env.NODE_ENV === "development" ? error.stack : undefined,
+        error: friendlyError.message,
+        errorTitle: friendlyError.title,
+        errorSuggestion: friendlyError.suggestion,
+        technicalError: friendlyError.technical,
+        details: process.env.NODE_ENV === "development" ? error.stack : undefined,
       });
     }
   }
@@ -344,10 +361,15 @@ app.post(
       console.error("\n❌ Error en /ai/execute:");
       console.error(error);
 
+      const friendlyError = formatUserFriendlyError(error);
+
       res.status(500).json({
         success: false,
         executed: false,
-        error: error.message || "Error ejecutando la acción",
+        error: friendlyError.message,
+        errorTitle: friendlyError.title,
+        errorSuggestion: friendlyError.suggestion,
+        technicalError: friendlyError.technical,
         details:
           process.env.NODE_ENV === "development" ? error.stack : undefined,
       });
@@ -384,9 +406,14 @@ app.post(
       console.error("\n❌ Error en /ai/preview:");
       console.error(error);
 
+      const friendlyError = formatUserFriendlyError(error);
+
       res.status(500).json({
         success: false,
-        error: error.message || "Error generando preview",
+        error: friendlyError.message,
+        errorTitle: friendlyError.title,
+        errorSuggestion: friendlyError.suggestion,
+        technicalError: friendlyError.technical,
       });
     }
   }
@@ -415,10 +442,14 @@ app.use((err, req, res, next) => {
   console.error("\n❌ Error no manejado:");
   console.error(err);
 
+  const friendlyError = formatUserFriendlyError(err);
+
   res.status(500).json({
     success: false,
-    error: "Error interno del servidor",
-    message: err.message,
+    error: friendlyError.message,
+    errorTitle: friendlyError.title,
+    errorSuggestion: friendlyError.suggestion,
+    technicalError: friendlyError.technical,
     details: process.env.NODE_ENV === "development" ? err.stack : undefined,
   });
 });

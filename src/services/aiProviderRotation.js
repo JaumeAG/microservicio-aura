@@ -77,6 +77,21 @@ class AIProviderManager {
       });
     });
 
+    // Grok providers (xAI)
+    const grokKeys = this.getKeysFromEnv("GROK_API_KEY");
+    grokKeys.forEach((key, index) => {
+      this.providers.push({
+        id: `grok_${index + 1}`,
+        type: "grok",
+        name: `Grok ${index + 1}`,
+        apiKey: key,
+        active: true,
+        errorCount: 0,
+        lastError: null,
+        model: "grok-beta",
+      });
+    });
+
     console.log(`\n📊 Proveedores de IA inicializados: ${this.providers.length}`);
     this.providers.forEach((p) => {
       console.log(
@@ -232,6 +247,9 @@ class AIProviderManager {
           case "claude":
             result = await this.callClaude(provider, prompt, systemPrompt);
             break;
+          case "grok":
+            result = await this.callGrok(provider, prompt, systemPrompt);
+            break;
           default:
             throw new Error(`Tipo de proveedor no soportado: ${provider.type}`);
         }
@@ -341,6 +359,43 @@ class AIProviderManager {
         "Claude SDK no disponible. El proveedor será omitido en rotación."
       );
     }
+  }
+
+  /**
+   * Llama a Grok (xAI)
+   */
+  async callGrok(provider, prompt, systemPrompt) {
+    const axios = (await import("axios")).default;
+    
+    const messages = [];
+    if (systemPrompt) {
+      messages.push({ role: "system", content: systemPrompt });
+    }
+    messages.push({ role: "user", content: prompt });
+
+    const response = await Promise.race([
+      axios.post(
+        "https://api.x.ai/v1/chat/completions",
+        {
+          model: provider.model,
+          messages: messages,
+          temperature: 0.7,
+          max_tokens: 2000,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${provider.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 30000,
+        }
+      ),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout de Grok API")), 30000)
+      ),
+    ]);
+
+    return response.data.choices[0].message.content;
   }
 
   /**

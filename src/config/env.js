@@ -38,7 +38,8 @@ function countProviderKeys(baseKey) {
 const geminiKeys = countProviderKeys('GEMINI_API_KEY');
 const openaiKeys = countProviderKeys('OPENAI_API_KEY');
 const claudeKeys = countProviderKeys('CLAUDE_API_KEY');
-const totalProviders = geminiKeys + openaiKeys + claudeKeys;
+const grokKeys = countProviderKeys('GROK_API_KEY');
+const totalProviders = geminiKeys + openaiKeys + claudeKeys + grokKeys;
 
 // Validar que haya al menos un proveedor
 if (totalProviders === 0) {
@@ -47,6 +48,7 @@ if (totalProviders === 0) {
   console.error("   - GEMINI_API_KEY (Recomendado)");
   console.error("   - OPENAI_API_KEY");
   console.error("   - CLAUDE_API_KEY");
+  console.error("   - GROK_API_KEY");
   console.error("\n📖 Ver: CONFIGURACION_PROVEEDORES_IA.md");
   process.exit(1);
 }
@@ -62,6 +64,9 @@ if (openaiKeys > 0) {
 }
 if (claudeKeys > 0) {
   console.log(`   ✅ Claude: ${claudeKeys} clave(s)`);
+}
+if (grokKeys > 0) {
+  console.log(`   ✅ Grok: ${grokKeys} clave(s)`);
 }
 console.log(`   📊 Total de proveedores: ${totalProviders}`);
 

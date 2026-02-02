@@ -481,7 +481,7 @@ async function validateGenerateSalesReport(params) {
   }
 
   if (params.format) {
-    const validFormats = ["view", "json", "pdf", "excel"];
+    const validFormats = ["view", "json", "pdf", "excel", "xlsx", "csv"];
     if (!validFormats.includes(params.format)) {
       warnings.push({
         field: "format",
@@ -515,7 +515,7 @@ async function validateGenerateCustomerReport(params) {
   }
 
   if (params.format) {
-    const validFormats = ["view", "pdf", "excel"];
+    const validFormats = ["view", "pdf", "excel", "xlsx", "csv"];
     if (!validFormats.includes(params.format)) {
       errors.push({
         field: "format",

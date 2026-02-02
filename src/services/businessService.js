@@ -161,8 +161,8 @@ export async function generateActionPreview(functionName, parameters, userId) {
             parameters.is_available === false
               ? "❌ Los clientes NO podrán ver/comprar este producto"
               : parameters.new_price
-              ? "Los clientes verán el nuevo precio inmediatamente"
-              : "Los clientes verán la información actualizada",
+                ? "Los clientes verán el nuevo precio inmediatamente"
+                : "Los clientes verán la información actualizada",
           system: "Actualización directa en base de datos",
         },
 
@@ -259,8 +259,8 @@ export async function generateActionPreview(functionName, parameters, userId) {
           operation === "set"
             ? "El stock se establecerá al valor indicado"
             : operation === "add"
-            ? "Se añadirá al stock existente"
-            : "Se restará del stock existente",
+              ? "Se añadirá al stock existente"
+              : "Se restará del stock existente",
           "Confirmar la operación",
         ],
 
@@ -270,7 +270,7 @@ export async function generateActionPreview(functionName, parameters, userId) {
 
     case "create_product": {
       return {
-        title: "➕ Crear Nuevo Producto",
+        title: "📦 Crear Nuevo Producto",
         description: `Crear producto "${parameters.name}" con precio ${parameters.price}€`,
 
         proposed_changes: [
@@ -425,8 +425,8 @@ export async function generateActionPreview(functionName, parameters, userId) {
           parameters.format === "pdf"
             ? "Preparando documento PDF para descarga"
             : parameters.format === "excel"
-            ? "Exportando datos a Excel"
-            : "Mostrando resultados en pantalla",
+              ? "Exportando datos a Excel"
+              : "Mostrando resultados en pantalla",
         ],
 
         estimated_duration:
@@ -440,8 +440,8 @@ export async function generateActionPreview(functionName, parameters, userId) {
         description: parameters.category
           ? `Reporte de productos en categoría "${parameters.category}"`
           : parameters.low_stock_only
-          ? "Reporte de productos con stock bajo"
-          : "Reporte completo de productos",
+            ? "Reporte de productos con stock bajo"
+            : "Reporte completo de productos",
 
         report_details: {
           filters: [
@@ -666,8 +666,8 @@ export async function generateActionPreview(functionName, parameters, userId) {
                 parameters.reward_type === "points"
                   ? "puntos"
                   : parameters.reward_type === "discount"
-                  ? "%"
-                  : ""
+                    ? "%"
+                    : ""
               }`
             : "N/A",
           requirements: parameters.requirements || "Sin requisitos específicos",
@@ -697,6 +697,149 @@ export async function generateActionPreview(functionName, parameters, userId) {
     // ==========================================
     // DEFAULT
     // ==========================================
+
+    // ==========================================
+    // MARKETING
+    // ==========================================
+
+    case "send_marketing_email":
+    case "send_bulk_offer": {
+      // Determinar segmento
+      const segmentNames = {
+        all: "Todos los clientes",
+        vip: "Clientes VIP",
+        regulares: "Clientes regulares",
+        nuevos: "Clientes nuevos",
+        inactivos: "Clientes inactivos",
+      };
+
+      const targetSegment =
+        segmentNames[parameters.target_segment] ||
+        parameters.target_segment ||
+        "Todos los clientes";
+
+      // Construir detalles del correo
+      const emailDetails = [];
+
+      emailDetails.push(`📧 **Asunto:** ${parameters.subject || "Sin asunto"}`);
+      emailDetails.push(`👥 **Destinatarios:** ${targetSegment}`);
+
+      if (parameters.message_content) {
+        const contentPreview =
+          parameters.message_content.length > 150
+            ? parameters.message_content.substring(0, 150) + "..."
+            : parameters.message_content;
+        emailDetails.push(`\n📝 **Contenido:**\n${contentPreview}`);
+      }
+
+      // Productos mencionados
+      if (
+        parameters.products_mentioned &&
+        parameters.products_mentioned.length > 0
+      ) {
+        emailDetails.push(`\n🛒 **Productos destacados:**`);
+        parameters.products_mentioned.forEach((prod) => {
+          if (prod.new_price && prod.old_price) {
+            const discount = Math.round(
+              ((prod.old_price - prod.new_price) / prod.old_price) * 100,
+            );
+            emailDetails.push(
+              `  • ${prod.name}: €${prod.new_price} (antes €${prod.old_price}) - ${discount}% de descuento`,
+            );
+          } else if (prod.new_price) {
+            emailDetails.push(`  • ${prod.name}: €${prod.new_price}`);
+          } else {
+            emailDetails.push(`  • ${prod.name}`);
+          }
+        });
+      }
+
+      // Oferta de puntos
+      if (parameters.points_offer) {
+        const { points_amount, minimum_purchase, expiry_date } =
+          parameters.points_offer;
+        emailDetails.push(`\n🎁 **Oferta de puntos:**`);
+        emailDetails.push(`  • Multiplica tus puntos x${points_amount}`);
+        if (minimum_purchase) {
+          emailDetails.push(`  • Compra mínima: €${minimum_purchase}`);
+        }
+        if (expiry_date) {
+          emailDetails.push(
+            `  • Válido hasta: ${new Date(expiry_date).toLocaleDateString("es-ES")}`,
+          );
+        }
+      }
+
+      // Información de descuento
+      if (parameters.discount_info) {
+        emailDetails.push(`\n💰 **Descuento:**`);
+        if (parameters.discount_info.discount_percentage) {
+          emailDetails.push(
+            `  • ${parameters.discount_info.discount_percentage}% de descuento`,
+          );
+        }
+        if (parameters.discount_info.discount_code) {
+          emailDetails.push(
+            `  • Código: ${parameters.discount_info.discount_code}`,
+          );
+        }
+        if (parameters.discount_info.description) {
+          emailDetails.push(`  • ${parameters.discount_info.description}`);
+        }
+      }
+
+      // Call to action
+      if (parameters.call_to_action) {
+        emailDetails.push(
+          `\n🔔 **Llamada a la acción:** ${parameters.call_to_action}`,
+        );
+      }
+
+      return {
+        title: "📧 Enviar Email de Marketing",
+        description: `Se enviará un email de campaña de marketing a: ${targetSegment}`,
+
+        summary: emailDetails.join("\n"),
+
+        details: emailDetails.join("\n"),
+
+        impact: {
+          business: `Campaña de marketing dirigida a ${targetSegment}`,
+          users: `Los clientes recibirán un correo electrónico promocional`,
+          system: "Se enviará el correo usando el sistema de email configurado",
+        },
+
+        risks: [
+          parameters.target_segment === "all"
+            ? "⚠️ Se enviará a TODOS los clientes registrados"
+            : "",
+          !parameters.subject || parameters.subject.length < 5
+            ? "⚠️ El asunto del correo es muy corto"
+            : "",
+          !parameters.message_content || parameters.message_content.length < 20
+            ? "⚠️ El contenido del mensaje es muy breve"
+            : "",
+        ].filter(Boolean),
+
+        requires_confirmation: true,
+        confirmation_level:
+          parameters.target_segment === "all" ? "high" : "medium",
+
+        next_steps: [
+          "Revisar el asunto y contenido del correo",
+          "Verificar los destinatarios",
+          "Confirmar el envío",
+          "El sistema enviará el email inmediatamente",
+        ],
+
+        estimated_duration:
+          parameters.target_segment === "all"
+            ? "Puede tomar varios minutos según la cantidad de clientes"
+            : "< 30 segundos",
+
+        confirmable: true,
+      };
+    }
 
     default: {
       console.warn(`⚠️ No hay preview definido para: ${functionName}`);
