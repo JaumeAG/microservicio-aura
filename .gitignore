@@ -1,0 +1,173 @@
+# ==========================================
+# Node.js
+# ==========================================
+node_modules/
+node_modules/**/*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# ==========================================
+# Environment Variables (CRÍTICO)
+# ==========================================
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.*.local
+*.env
+
+# ==========================================
+# Logs
+# ==========================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# ==========================================
+# Build & Distribution
+# ==========================================
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# ==========================================
+# Cache & Temporary
+# ==========================================
+.cache/
+.temp/
+.tmp/
+*.tmp
+*.swp
+*.swo
+*~
+
+# ==========================================
+# Coverage & Testing
+# ==========================================
+coverage/
+.nyc_output/
+*.lcov
+.jest/
+
+# ==========================================
+# IDE & Editors
+# ==========================================
+
+# VS Code
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+*.code-workspace
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ==========================================
+# OS Files
+# ==========================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ==========================================
+# Project Specific
+# ==========================================
+
+# Gemini cache
+.gemini-cache/
+
+# Audio files (si guardas temporales de voz)
+uploads/
+audio-temp/
+*.webm
+*.wav
+*.mp3
+*.ogg
+
+# Backups
+*.backup
+*.bak
+*.old
+
+# Reports
+reports/
+*.pdf
+*.xlsx
+
+# Scripts de prueba temporal
+test-*.js
+temp-*.js
+debug-*.js
+
+# ==========================================
+# Security & Keys (DOBLE VERIFICACIÓN)
+# ==========================================
+*.pem
+*.key
+*.cert
+*.crt
+secrets/
+credentials/
+private/
+
+# ==========================================
+# Database (si usas local)
+# ==========================================
+*.sqlite
+*.sqlite3
+*.db
+
+# ==========================================
+# Docker (si usas)
+# ==========================================
+docker-compose.override.yml
+
+# ==========================================
+# Lock files (opcional, depende del proyecto)
+# ==========================================
+# Descomenta si usas solo npm:
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
