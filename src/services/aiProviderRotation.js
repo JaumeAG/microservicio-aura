@@ -43,7 +43,7 @@ class AIProviderManager {
         active: true,
         errorCount: 0,
         lastError: null,
-        model: "gemini-flash-latest",
+        model: "gemini-2.5-flash",
       });
     });
 

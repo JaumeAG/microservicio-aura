@@ -235,6 +235,7 @@ app.post(
         interpretation.function_name,
         interpretation.parameters,
         user_id,
+        req.userToken,
       );
 
       console.log("\n✅ Preview generado exitosamente");
@@ -253,7 +254,7 @@ app.post(
             preview.summary ||
             preview.description ||
             "Acción preparada",
-          details: preview.description || preview.details || "",
+          details: preview.details || preview.summary || preview.description || "",
           confirmable: preview.confirmable || true,
         },
       };
@@ -300,6 +301,7 @@ app.post(
         "find_product",
         "get_families_with_products",
         "update_product_price",
+        "update_family_prices",
         "update_product_info",
         "update_product_stock",
         "create_product",
@@ -405,6 +407,7 @@ app.post(
         function_name,
         parameters,
         user_id,
+        req.userToken,
       );
 
       res.json({

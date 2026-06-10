@@ -18,6 +18,7 @@ export async function executeAction(functionName, parameters, userToken) {
     find_product: executeFindProduct,
     get_families_with_products: executeGetFamiliesWithProducts,
     update_product_price: executeUpdateProductPrice,
+    update_family_prices: executeUpdateFamilyPrices,
     update_product_info: executeUpdateProductInfo,
     update_product_stock: executeUpdateProductStock,
     create_product: executeCreateProduct,
@@ -487,6 +488,88 @@ async function executeGetFamiliesWithProducts(params, userToken) {
       `Error obteniendo familias con productos: ${error.message}`,
     );
   }
+}
+
+export async function previewFamilyPrices(params, userToken) {
+  return executeUpdateFamilyPrices({ ...params, dry_run: true }, userToken);
+}
+
+async function executeUpdateFamilyPrices(params, userToken) {
+  console.log(`📂 Actualizando precios de familia:`, params);
+
+  const {
+    family_id,
+    family_name,
+    operation,
+    direction,
+    value,
+    new_price,
+    dry_run,
+  } = params;
+
+  const body = {
+    operation,
+    dry_run: dry_run === true,
+  };
+
+  if (family_id) body.family_id = family_id;
+  if (family_name) body.family_name = family_name;
+  if (operation === "percent") {
+    body.direction = direction;
+    body.value = value;
+  }
+  if (operation === "set_fixed") {
+    body.new_price = new_price;
+  }
+
+  const result = await callLaravelAPI(
+    `/api/aura/familias/precios`,
+    "PUT",
+    body,
+    userToken,
+  );
+
+  if (!result.success) {
+    throw new Error(result.message || "Error al actualizar precios de familia");
+  }
+
+  const data = result.data || {};
+  const cambios = data.cambios || [];
+  const familyLabel = data.family_name || family_name || `familia #${family_id}`;
+  const operationLabel = data.operation_label || operation;
+
+  if (dry_run) {
+    return {
+      success: true,
+      dry_run: true,
+      family_name: familyLabel,
+      operation_label: operationLabel,
+      total_productos: data.total_productos || cambios.length,
+      cambios,
+      message: `Preview: ${cambios.length} producto(s) en "${familyLabel}" — ${operationLabel}`,
+    };
+  }
+
+  const lines = cambios
+    .slice(0, 5)
+    .map(
+      (c) =>
+        `  • ${c.nombre}: ${c.precio_anterior?.toFixed(2)}€ → ${c.precio_nuevo?.toFixed(2)}€`,
+    )
+    .join("\n");
+  const more =
+    cambios.length > 5 ? `\n  ... y ${cambios.length - 5} más` : "";
+
+  return {
+    success: true,
+    family_id: data.family_id,
+    family_name: familyLabel,
+    operation: data.operation,
+    operation_label: operationLabel,
+    total_productos: data.total_productos || cambios.length,
+    cambios,
+    message: `✅ Precios actualizados en ${cambios.length} producto(s) de "${familyLabel}" (${operationLabel})\n${lines}${more}`,
+  };
 }
 
 async function executeUpdateProductPrice(params, userToken) {

@@ -49,6 +49,48 @@ const AVAILABLE_FUNCTIONS = [
     },
   },
   {
+    name: "update_family_prices",
+    description:
+      "Cambiar el precio de TODOS los productos de una familia/categoría. Usa cuando el usuario quiera aplicar un cambio general a toda una familia (no a un solo producto). Solo dos modos: porcentaje (subir/bajar) o poner todos al mismo precio fijo.",
+    parameters: {
+      type: "object",
+      properties: {
+        family_id: {
+          type: "integer",
+          description: "ID de la familia (si se conoce)",
+        },
+        family_name: {
+          type: "string",
+          description:
+            "Nombre de la familia/categoría (ej: 'Bebidas', 'Hamburguesas', 'Postres')",
+        },
+        operation: {
+          type: "string",
+          enum: ["percent", "set_fixed"],
+          description:
+            "'percent' para subir/bajar un porcentaje, 'set_fixed' para poner todos al mismo precio",
+        },
+        direction: {
+          type: "string",
+          enum: ["increase", "decrease"],
+          description:
+            "Solo si operation es 'percent': 'increase' para subir, 'decrease' para bajar",
+        },
+        value: {
+          type: "number",
+          description:
+            "Porcentaje a aplicar (ej: 10 para 10%). Solo si operation es 'percent'",
+        },
+        new_price: {
+          type: "number",
+          description:
+            "Precio fijo para todos los productos de la familia. Solo si operation es 'set_fixed'",
+        },
+      },
+      required: ["operation"],
+    },
+  },
+  {
     name: "update_product_info",
     description:
       "Actualizar información completa de un producto: nombre, descripción, precio, categoría, disponibilidad, stock. Usa esta función cuando se quiera cambiar CUALQUIER dato del producto o múltiples campos a la vez.",
@@ -568,8 +610,16 @@ REGLAS IMPORTANTES:
    - Si te preguntan sobre tu funcionamiento técnico, responde de forma genérica: "Soy un asistente de IA diseñado para ayudarte con la gestión de tu negocio"
    - Mantén siempre un perfil profesional y evita cualquier referencia técnica interna
 
-1. **update_product_info vs update_product_price**:
-   - Usa "update_product_price" SOLO cuando el usuario quiera cambiar únicamente el precio
+1. **update_family_prices vs update_product_price**:
+   - Usa "update_family_prices" cuando el cambio sea para TODA una familia/categoría:
+     * "sube un 10% las bebidas" → operation: "percent", direction: "increase", value: 10
+     * "baja un 5% la familia postres" → operation: "percent", direction: "decrease", value: 5
+     * "pon todas las bebidas a 3 euros" → operation: "set_fixed", new_price: 3
+     * "cambia el precio de toda la familia hamburguesas a 12€" → operation: "set_fixed", new_price: 12
+   - Usa "update_product_price" SOLO para UN producto concreto
+
+1.1. **update_product_info vs update_product_price**:
+   - Usa "update_product_price" SOLO cuando el usuario quiera cambiar únicamente el precio de UN producto
    - Usa "update_product_info" cuando:
      * Se quiera cambiar nombre, descripción, categoría, disponibilidad o stock
      * Se quieran cambiar múltiples campos a la vez (ej: precio Y descripción)
@@ -644,9 +694,23 @@ REGLAS IMPORTANTES:
 
 EJEMPLOS DE INTERPRETACIÓN:
 
-**Productos - Solo precio:**
+**Productos - Solo precio (un producto):**
 Usuario: "cambia el precio de la hamburguesa a 12 euros"
 Respuesta: { "function": "update_product_price", "arguments": { "product_name": "hamburguesa", "new_price": 12, "currency": "EUR" }}
+
+**Familia - Precio fijo para todos:**
+Usuario: "pon todas las bebidas a 3 euros"
+Respuesta: { "function": "update_family_prices", "arguments": { "family_name": "Bebidas", "operation": "set_fixed", "new_price": 3 }}
+
+Usuario: "cambia el precio de toda la familia postres a 5€"
+Respuesta: { "function": "update_family_prices", "arguments": { "family_name": "Postres", "operation": "set_fixed", "new_price": 5 }}
+
+**Familia - Porcentaje:**
+Usuario: "sube un 10% el precio de las hamburguesas"
+Respuesta: { "function": "update_family_prices", "arguments": { "family_name": "Hamburguesas", "operation": "percent", "direction": "increase", "value": 10 }}
+
+Usuario: "baja un 15% toda la familia entrantes"
+Respuesta: { "function": "update_family_prices", "arguments": { "family_name": "Entrantes", "operation": "percent", "direction": "decrease", "value": 15 }}
 
 **Productos - Cambiar nombre:**
 Usuario: "cambia el nombre de la hamburguesa a hamburguesa premium"
