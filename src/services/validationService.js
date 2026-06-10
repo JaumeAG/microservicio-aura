@@ -8,6 +8,7 @@ export async function validateActionParameters(functionName, parameters) {
 
   const validators = {
     update_product_price: validateUpdateProductPrice,
+    update_family_prices: validateUpdateFamilyPrices,
     update_product_info: validateUpdateProductInfo,
     update_product_stock: validateUpdateProductStock,
     create_product: validateCreateProduct,
@@ -130,6 +131,105 @@ async function validateUpdateProductPrice(params) {
       });
     }
   }
+
+  return {
+    is_valid: errors.length === 0,
+    errors,
+    warnings,
+  };
+}
+
+async function validateUpdateFamilyPrices(params) {
+  const errors = [];
+  const warnings = [];
+
+  if (!params.family_id && !params.family_name) {
+    errors.push({
+      field: "family_id/family_name",
+      message: "Se requiere el ID o nombre de la familia",
+    });
+  }
+
+  const validOperations = ["percent", "set_fixed"];
+  if (!params.operation) {
+    errors.push({
+      field: "operation",
+      message: "Tipo de operación requerido: 'percent' o 'set_fixed'",
+    });
+  } else if (!validOperations.includes(params.operation)) {
+    errors.push({
+      field: "operation",
+      message: `Operación inválida. Usa: ${validOperations.join(", ")}`,
+    });
+  }
+
+  if (params.operation === "percent") {
+    if (!params.direction) {
+      errors.push({
+        field: "direction",
+        message: "Se requiere direction: 'increase' o 'decrease'",
+      });
+    } else if (!["increase", "decrease"].includes(params.direction)) {
+      errors.push({
+        field: "direction",
+        message: "direction debe ser 'increase' o 'decrease'",
+      });
+    }
+
+    if (params.value === undefined || params.value === null) {
+      errors.push({
+        field: "value",
+        message: "Se requiere el porcentaje (value)",
+      });
+    } else if (
+      typeof params.value !== "number" ||
+      isNaN(params.value) ||
+      params.value <= 0 ||
+      params.value > 100
+    ) {
+      errors.push({
+        field: "value",
+        message: "El porcentaje debe ser un número entre 0.01 y 100",
+      });
+    } else if (params.value > 50) {
+      warnings.push({
+        field: "value",
+        message: "⚠️ Cambio de precio superior al 50%. Verifica que sea correcto.",
+        severity: "high",
+      });
+    }
+  }
+
+  if (params.operation === "set_fixed") {
+    if (params.new_price === undefined || params.new_price === null) {
+      errors.push({
+        field: "new_price",
+        message: "Se requiere el precio fijo (new_price)",
+      });
+    } else if (
+      typeof params.new_price !== "number" ||
+      isNaN(params.new_price) ||
+      params.new_price < 0
+    ) {
+      errors.push({
+        field: "new_price",
+        message: "El precio fijo debe ser un número mayor o igual a 0",
+      });
+    } else if (params.new_price === 0) {
+      warnings.push({
+        field: "new_price",
+        message: "⚠️ Precio $0: todos los productos de la familia serán gratis",
+        severity: "high",
+      });
+    }
+  }
+
+  warnings.push({
+    field: "family",
+    message:
+      "⚠️ Esta acción afectará a TODOS los productos de la familia indicada",
+    severity: "high",
+  });
 
   return {
     is_valid: errors.length === 0,

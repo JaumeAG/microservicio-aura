@@ -4,7 +4,14 @@
  * Calcula impacto y riesgos
  */
 
-export async function generateActionPreview(functionName, parameters, userId) {
+import { previewFamilyPrices } from "./executionService.js";
+
+export async function generateActionPreview(
+  functionName,
+  parameters,
+  userId,
+  userToken = null,
+) {
   console.log(`\n📊 Generando preview para: ${functionName}`);
 
   switch (functionName) {
@@ -66,6 +73,76 @@ export async function generateActionPreview(functionName, parameters, userId) {
         ],
 
         estimated_duration: "< 1 segundo",
+      };
+    }
+
+    case "update_family_prices": {
+      const familyLabel =
+        parameters.family_name || `familia #${parameters.family_id}`;
+      const operationText =
+        parameters.operation === "set_fixed"
+          ? `Poner todos a ${parameters.new_price}€`
+          : `${parameters.direction === "increase" ? "Subir" : "Bajar"} ${parameters.value}%`;
+
+      let details = `Familia: ${familyLabel}\nOperación: ${operationText}`;
+      let proposedChanges = [];
+      let totalProductos = null;
+
+      if (userToken) {
+        try {
+          const preview = await previewFamilyPrices(parameters, userToken);
+          totalProductos = preview.total_productos;
+          proposedChanges = (preview.cambios || []).map((c) => ({
+            field: c.nombre,
+            from: `${c.precio_anterior?.toFixed(2)}€`,
+            to: `${c.precio_nuevo?.toFixed(2)}€`,
+            icon: "💰",
+          }));
+          const changeLines = proposedChanges
+            .slice(0, 8)
+            .map((c) => `  • ${c.field}: ${c.from} → ${c.to}`)
+            .join("\n");
+          const more =
+            proposedChanges.length > 8
+              ? `\n  ... y ${proposedChanges.length - 8} producto(s) más`
+              : "";
+          details = `Familia: ${preview.family_name} (${totalProductos} productos)\n${operationText}\n\nCambios:\n${changeLines}${more}`;
+        } catch (error) {
+          details += `\n\n(No se pudo cargar el detalle: ${error.message})`;
+        }
+      }
+
+      return {
+        title: "📂 Cambiar Precios de Familia",
+        description: `Aplicar "${operationText}" a todos los productos de "${familyLabel}"`,
+        summary: details,
+        details,
+        proposed_changes: proposedChanges,
+        impact: {
+          business: `Cambio masivo de precios en la familia ${familyLabel}`,
+          users: "Todos los clientes verán los nuevos precios inmediatamente",
+          system: totalProductos
+            ? `Se actualizarán ${totalProductos} producto(s)`
+            : "Actualización masiva en base de datos",
+        },
+        risks: [
+          "⚠️ ACCIÓN MASIVA: afecta a todos los productos de la familia",
+          ...(parameters.operation === "set_fixed" && parameters.new_price === 0
+            ? ["⚠️ Precio $0: todos los productos serán gratis"]
+            : []),
+          ...(parameters.operation === "percent" && parameters.value > 30
+            ? ["⚠️ Cambio de porcentaje elevado"]
+            : []),
+        ],
+        requires_confirmation: true,
+        confirmation_level: "high",
+        confirmable: true,
+        next_steps: [
+          "Revisar la familia y los cambios de precio",
+          "Confirmar la actualización masiva",
+          "Los precios se actualizarán de inmediato en la carta",
+        ],
+        estimated_duration: "< 2 segundos",
       };
     }
 
@@ -885,6 +962,7 @@ export function calculateRiskLevel(functionName, parameters) {
 
     // Riesgo medio
     update_product_price: "medium",
+    update_family_prices: "high",
     update_product_info: "medium",
     create_loyalty_campaign: "medium",
 
@@ -908,6 +986,7 @@ export function requiresConfirmation(functionName, parameters) {
   // Todas las acciones de escritura requieren confirmación
   const writeActions = [
     "update_product_price",
+    "update_family_prices",
     "update_product_info",
     "update_product_stock",
     "create_product",
