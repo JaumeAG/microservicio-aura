@@ -171,3 +171,7 @@ docker-compose.override.yml
 # package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
+
+.env
+.env.example
+.en.production
